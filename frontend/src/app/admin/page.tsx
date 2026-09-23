@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -12,6 +12,14 @@ type Listing = { _id: string; title: string; location: string; rent: number; sta
 type ActivityLog = { _id: string; action: string; target: string; details: string; createdAt: string };
 
 const emptyStats: Stats = { totalUsers: 0, totalListings: 0, activeListings: 0, pendingListings: 0, verifiedOwners: 0, pendingReports: 0 };
+
+const readApiResponse = async (response: Response) => {
+  const data = await response.json();
+  if (!response.ok) {
+    throw Object.assign(new Error(data.message || `Request failed (${response.status}).`), { status: response.status });
+  }
+  return data;
+};
 
 export default function AdminPage() {
   const router = useRouter();
@@ -40,9 +48,9 @@ export default function AdminPage() {
 
       const headers = { Authorization: `Bearer ${token}` };
       Promise.all([
-        fetch(`${API_URL}/admin/dashboard`, { headers }).then((response) => response.json()),
-        fetch(`${API_URL}/admin/listings`, { headers }).then((response) => response.json()),
-        fetch(`${API_URL}/admin/activity`, { headers }).then((response) => response.json()),
+        fetch(`${API_URL}/admin/dashboard`, { headers }).then(readApiResponse),
+        fetch(`${API_URL}/admin/listings`, { headers }).then(readApiResponse),
+        fetch(`${API_URL}/admin/activity`, { headers }).then(readApiResponse),
       ])
         .then(([dashboard, listingData, activityData]) => {
           if (dashboard.message) throw new Error(dashboard.message);
@@ -50,7 +58,17 @@ export default function AdminPage() {
           setListings(listingData.listings || []);
           setActivity(activityData.logs || []);
         })
-        .catch((requestError) => setError(requestError instanceof Error ? requestError.message : 'Unable to load admin data.'))
+        .catch((requestError) => {
+          if (requestError instanceof Error && [401, 403].includes((requestError as Error & { status?: number }).status || 0)) {
+            localStorage.removeItem('roomfinder_token');
+            localStorage.removeItem('roomfinder_user');
+            router.replace('/login');
+            return;
+          }
+          setError(requestError instanceof TypeError
+            ? `Cannot reach the server at ${API_URL}. Start the backend and reload this page.`
+            : requestError instanceof Error ? requestError.message : 'Unable to load admin data.');
+        })
         .finally(() => setLoading(false));
     } catch {
       router.replace('/login');
@@ -59,15 +77,28 @@ export default function AdminPage() {
   }, [router]);
 
   const updateListing = async (listingId: string, status: 'approved' | 'rejected') => {
-    const token = localStorage.getItem('roomfinder_token');
-    const response = await fetch(`${API_URL}/admin/listings/${listingId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ status }),
-    });
-    if (!response.ok) return;
-    setListings((current) => current.map((listing) => listing._id === listingId ? { ...listing, status } : listing));
-    setStats((current) => ({ ...current, pendingListings: Math.max(0, current.pendingListings - 1), activeListings: status === 'approved' ? current.activeListings + 1 : current.activeListings }));
+    try {
+      const token = localStorage.getItem('roomfinder_token');
+      const response = await fetch(`${API_URL}/admin/listings/${listingId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status }),
+      });
+      const data = await readApiResponse(response);
+      setListings((current) => current.map((listing) => listing._id === listingId ? { ...listing, status: data.room.status } : listing));
+      setStats((current) => ({
+        ...current,
+        pendingListings: Math.max(0, current.pendingListings - 1),
+        activeListings: current.activeListings + (status === 'approved' ? 1 : 0),
+      }));
+      const logs = await fetch(`${API_URL}/admin/activity`, { headers: { Authorization: `Bearer ${token}` } }).then(readApiResponse);
+      setActivity(logs.logs || []);
+      setError('');
+    } catch (requestError) {
+      setError(requestError instanceof TypeError
+        ? `Cannot reach the server at ${API_URL}. Start the backend and try again.`
+        : requestError instanceof Error ? requestError.message : 'Unable to update listing.');
+    }
   };
 
   const statCards = [

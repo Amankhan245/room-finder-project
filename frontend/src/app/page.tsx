@@ -119,6 +119,11 @@ export default function HomePage() {
                 Add Room
               </Link>
             )}
+            {isAdmin && (
+              <Link href="/admin" className="font-semibold text-emerald-700 transition hover:text-emerald-800">
+                Admin dashboard
+              </Link>
+            )}
           </nav>
 
           <div className="flex items-center gap-3">

@@ -24,38 +24,25 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      try {
-        const response = await fetch(`${API_URL}/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(form),
-        });
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
 
-        const data = await response.json();
+      const data = await response.json();
 
-        if (!response.ok) {
-          throw new Error(data.message || 'Login failed');
-        }
-
-        localStorage.setItem('roomfinder_token', data.token);
-        localStorage.setItem('roomfinder_user', JSON.stringify(data.user));
-      } catch {
-        const normalizedEmail = form.email.trim();
-        const isAdminLogin = ['admin', 'admin@roomfinder.local'].includes(normalizedEmail.toLowerCase());
-        const demoToken = isAdminLogin ? 'demo-local-admin' : 'demo-local-student';
-
-        localStorage.setItem('roomfinder_token', demoToken);
-        localStorage.setItem('roomfinder_user', JSON.stringify({
-          _id: isAdminLogin ? 'demo-local-admin' : 'demo-local-student',
-          name: normalizedEmail.split('@')[0] || 'Room Finder User',
-          email: normalizedEmail || 'demo@roomfinder.local',
-          role: isAdminLogin ? 'admin' : 'student',
-        }));
+      if (!response.ok) {
+        throw new Error(data.message || 'Login failed. Check your email and password.');
       }
 
-      window.location.assign('/');
+      localStorage.setItem('roomfinder_token', data.token);
+      localStorage.setItem('roomfinder_user', JSON.stringify(data.user));
+      window.location.assign(data.user?.role === 'admin' ? '/admin' : '/');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      setError(err instanceof TypeError
+        ? `Cannot reach the server at ${API_URL}. Start the backend and try again.`
+        : err instanceof Error ? err.message : 'Something went wrong');
     } finally {
       setLoading(false);
     }
