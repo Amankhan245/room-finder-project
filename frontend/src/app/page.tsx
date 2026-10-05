@@ -39,7 +39,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!localStorage.getItem('roomfinder_token')) {
-      setAuthChecked(true);
+      router.replace('/login');
       return;
     }
 
