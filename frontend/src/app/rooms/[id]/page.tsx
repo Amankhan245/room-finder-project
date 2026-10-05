@@ -1,19 +1,22 @@
  'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { use } from 'react';
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Bath, BedDouble, MapPin, ShieldCheck, Star, Wifi, CarFront, Sparkles } from 'lucide-react';
+import { Home, Bath, BedDouble, MapPin, ShieldCheck, Star, Wifi, CarFront, MessageCircle, Sparkles } from 'lucide-react';
 import { demoRooms } from '@/lib/data';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
 export default function RoomDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const fallbackRoom = demoRooms.find((entry) => entry._id === id) ?? demoRooms[0];
   const [room, setRoom] = useState(fallbackRoom);
   const [isSaved, setIsSaved] = useState(false);
-  const [contactSent, setContactSent] = useState(false);
+  const [isStartingChat, setIsStartingChat] = useState(false);
+  const [chatError, setChatError] = useState('');
 
   useEffect(() => {
     fetch(`${API_URL}/rooms/${id}`)
@@ -61,17 +64,44 @@ export default function RoomDetailPage({ params }: { params: Promise<{ id: strin
     setIsSaved(nextSavedRooms.includes(room._id));
   };
 
-  const handleContact = () => {
-    setContactSent(true);
+  const handleStartChat = async () => {
+    const token = localStorage.getItem('roomfinder_token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
+    setChatError('');
+    setIsStartingChat(true);
+    try {
+      const response = await fetch(`${API_URL}/chats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ roomId: room._id, message: `Hi, I am interested in ${room.title}. Is it available?` }),
+      });
+      const isJson = response.headers.get('content-type')?.includes('application/json');
+      const data = isJson ? await response.json() : null;
+      if (response.status === 401) {
+        localStorage.removeItem('roomfinder_token');
+        localStorage.removeItem('roomfinder_user');
+        router.push('/login');
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(data?.message || 'Chat service is unavailable. Restart the backend and try again.');
+      }
+      router.push(`/messages/${data.chat._id}`);
+    } catch (requestError) {
+      setChatError(requestError instanceof Error ? requestError.message : 'Unable to start chat.');
+    } finally {
+      setIsStartingChat(false);
+    }
   };
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
+    <main className="min-h-screen bg-white text-slate-900">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 transition hover:text-emerald-700">
-          <ArrowLeft className="h-4 w-4" />
-          Back to rooms
-        </Link>
+        <Link href="/" aria-label="Home page" title="Home page" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-rose-200 hover:text-rose-500"><Home className="h-5 w-5" /></Link>
 
         <div className="mt-8 overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-xl shadow-slate-200/60">
           <div className="grid gap-4 p-4 md:grid-cols-2 lg:grid-cols-3">
@@ -89,7 +119,7 @@ export default function RoomDetailPage({ params }: { params: Promise<{ id: strin
         <div className="mt-8 grid gap-8 lg:grid-cols-[1.5fr_0.9fr]">
           <div>
             <div className="flex flex-wrap items-center gap-3">
-              <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">{room.roomType}</span>
+              <span className="inline-flex rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-600">{room.roomType}</span>
               {room.ownerDetails?.isVerified && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
                   <ShieldCheck className="h-3.5 w-3.5" /> Verified owner
@@ -100,7 +130,7 @@ export default function RoomDetailPage({ params }: { params: Promise<{ id: strin
             <h1 className="mt-4 text-4xl font-black tracking-tight text-slate-900">{room.title}</h1>
 
             <div className="mt-3 flex items-center gap-2 text-slate-600">
-              <MapPin className="h-4 w-4 text-emerald-600" />
+              <MapPin className="h-4 w-4 text-rose-500" />
               <span>{room.address}</span>
             </div>
 
@@ -117,22 +147,22 @@ export default function RoomDetailPage({ params }: { params: Promise<{ id: strin
 
               <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <div className="rounded-2xl bg-slate-50 p-4">
-                  <BedDouble className="h-5 w-5 text-emerald-600" />
+                  <BedDouble className="h-5 w-5 text-rose-500" />
                   <div className="mt-3 text-lg font-bold">{room.roomType}</div>
                   <div className="text-sm text-slate-500">Room Type</div>
                 </div>
                 <div className="rounded-2xl bg-slate-50 p-4">
-                  <Wifi className="h-5 w-5 text-emerald-600" />
+                  <Wifi className="h-5 w-5 text-rose-500" />
                   <div className="mt-3 text-lg font-bold">WiFi</div>
                   <div className="text-sm text-slate-500">Included</div>
                 </div>
                 <div className="rounded-2xl bg-slate-50 p-4">
-                  <Bath className="h-5 w-5 text-emerald-600" />
+                  <Bath className="h-5 w-5 text-rose-500" />
                   <div className="mt-3 text-lg font-bold">Attached</div>
                   <div className="text-sm text-slate-500">Washroom</div>
                 </div>
                 <div className="rounded-2xl bg-slate-50 p-4">
-                  <CarFront className="h-5 w-5 text-emerald-600" />
+                  <CarFront className="h-5 w-5 text-rose-500" />
                   <div className="mt-3 text-lg font-bold">Parking</div>
                   <div className="text-sm text-slate-500">Available</div>
                 </div>
@@ -149,6 +179,7 @@ export default function RoomDetailPage({ params }: { params: Promise<{ id: strin
               </div>
 
               <div className="mt-6 space-y-3 text-sm text-slate-600">
+                {room.ownerDetails?.name && <div className="rounded-xl bg-slate-50 px-3 py-2"><p className="font-semibold text-slate-900">Owner: {room.ownerDetails.name}</p>{room.ownerDetails.phone && <a className="mt-1 block text-rose-600 hover:text-rose-700 hover:underline" href={`tel:${room.ownerDetails.phone}`}>Call {room.ownerDetails.phone}</a>}{room.ownerDetails.email && <a className="mt-1 block text-rose-600 hover:text-rose-700 hover:underline" href={`mailto:${room.ownerDetails.email}`}>{room.ownerDetails.email}</a>}</div>}
                 <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
                   <span>Deposit</span>
                   <span className="font-semibold text-slate-900">₹{room.deposit.toLocaleString()}</span>
@@ -163,23 +194,21 @@ export default function RoomDetailPage({ params }: { params: Promise<{ id: strin
                 </div>
               </div>
 
-              <button onClick={handleContact} className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-200 transition hover:bg-emerald-700">
-                {contactSent ? 'Contact request sent' : 'Contact owner'}
-              </button>
+              <button type="button" onClick={handleStartChat} disabled={isStartingChat} className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full bg-rose-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-rose-200 transition hover:bg-rose-600 disabled:cursor-wait disabled:opacity-70"><MessageCircle className="h-4 w-4" /> {isStartingChat ? 'Opening chat...' : 'Chat with owner'}</button>
+              {chatError && <p role="alert" className="mt-2 text-sm text-red-600">{chatError}</p>}
 
-              <button onClick={handleSave} className="mt-3 inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-emerald-200 hover:text-emerald-700">
+              <button onClick={handleSave} className="mt-3 inline-flex w-full items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-rose-200 hover:text-rose-600">
                 {isSaved ? 'Saved room' : 'Save this room'}
               </button>
 
-              {contactSent && <p className="mt-3 text-center text-xs text-emerald-700">The owner will respond to your account shortly.</p>}
             </div>
 
-            <div className="mt-6 rounded-[2rem] border border-slate-200 bg-gradient-to-br from-slate-900 to-slate-800 p-6 text-white shadow-xl">
-              <div className="flex items-center gap-2 text-emerald-400">
+            <div className="mt-6 rounded-[2rem] border border-slate-200 bg-rose-50 p-6 text-slate-900 shadow-sm">
+              <div className="flex items-center gap-2 text-rose-500">
                 <Sparkles className="h-4 w-4" />
                 <span className="text-sm font-semibold uppercase tracking-[0.2em]">Why choose it</span>
               </div>
-              <ul className="mt-5 space-y-3 text-sm text-slate-300">
+              <ul className="mt-5 space-y-3 text-sm text-slate-600">
                 <li>• Verified by Room Finder quality team</li>
                 <li>• Clean and secure living environment</li>
                 <li>• Close to transport and essential services</li>

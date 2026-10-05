@@ -95,12 +95,13 @@ NEXT_PUBLIC_API_URL=http://localhost:5000/api
 
 ## MongoDB Setup
 
-- Local MongoDB: add your connection string to `MONGODB_URI`.
-- If left blank, the backend falls back to an in-memory MongoDB server for local development.
+- Local MongoDB: set its connection string in `MONGODB_URI`.
+- If MongoDB is blank or unavailable, the backend uses a local fallback stored in `backend/data/mongodb` across restarts.
+- The fallback directory is gitignored. Back it up if you rely on its data; use MongoDB Atlas or another managed database for production.
 
 ## Admin Login
 
-Use the seeded admin credentials:
+The admin dashboard asks for an admin email and password each time it is opened. Use the seeded demo credentials:
 
 - Email: `admin@roomfinder.local`
 - Password: `Admin@123`
@@ -129,7 +130,7 @@ Use the seeded admin credentials:
 ## Important Architecture Decisions
 
 - Separate frontend and backend projects for cleaner scaling
-- In-memory MongoDB fallback for local development and demos
+- Persistent local MongoDB fallback for local development and demos
 - Pending approval for owner listings before public visibility
 - Verification workflow for owners controlled by admin
 - REST-based API structure for maintainability and interview readiness
@@ -144,7 +145,7 @@ Use the seeded admin credentials:
 ## Interview Questions
 
 1. How did you separate roles and route protection?
-2. Why use a MongoDB memory server fallback during local development?
+2. How does the persistent local MongoDB fallback support development?
 3. How does the approval workflow work for owner listings?
 4. How is room search filtered and sorted in the API?
 5. Why is JWT used with protected middleware and not client-side role trust?

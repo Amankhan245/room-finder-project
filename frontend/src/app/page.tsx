@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import { MapPin, Search, Star, ShieldCheck, Users, Home, Building2, ArrowRight, CheckCircle2, Heart } from 'lucide-react';
+import { MapPin, Search, Star, ShieldCheck, Users, Home, Building2, ArrowRight, CheckCircle2, Heart, MessageCircle, Menu } from 'lucide-react';
 import { demoRooms, locations } from '@/lib/data';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
@@ -30,23 +30,34 @@ export default function HomePage() {
   const [selectedRoomType, setSelectedRoomType] = useState('Single Room');
   const [hasSearched, setHasSearched] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [loggedInUser, setLoggedInUser] = useState<{ name: string; username: string } | null>(null);
   const [isOwner, setIsOwner] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [rooms, setRooms] = useState(demoRooms);
+  const [savedRoomIds, setSavedRoomIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!localStorage.getItem('roomfinder_token')) {
-      router.replace('/login');
+      setAuthChecked(true);
       return;
     }
 
     setIsLoggedIn(true);
     try {
       const user = JSON.parse(localStorage.getItem('roomfinder_user') || 'null');
+      if (user && typeof user.username === 'string') {
+        setLoggedInUser({
+          name: typeof user.name === 'string' ? user.name : user.username,
+          username: user.username,
+        });
+      } else {
+        setLoggedInUser(null);
+      }
       setIsOwner(user?.role === 'owner');
       setIsAdmin(user?.role === 'admin');
     } catch {
+      setLoggedInUser(null);
       setIsOwner(false);
       setIsAdmin(false);
     }
@@ -67,10 +78,38 @@ export default function HomePage() {
       });
   }, [authChecked]);
 
+  useEffect(() => {
+    try {
+      setSavedRoomIds(JSON.parse(localStorage.getItem('roomfinder_saved_rooms') || '[]'));
+    } catch {
+      setSavedRoomIds([]);
+    }
+  }, []);
+
+  const toggleSavedRoom = async (roomId: string) => {
+    const isSaved = savedRoomIds.includes(roomId);
+    const nextSavedIds = isSaved ? savedRoomIds.filter((id) => id !== roomId) : [...savedRoomIds, roomId];
+    setSavedRoomIds(nextSavedIds);
+    localStorage.setItem('roomfinder_saved_rooms', JSON.stringify(nextSavedIds));
+
+    const token = localStorage.getItem('roomfinder_token');
+    if (!token) return;
+    try {
+      await fetch(`${API_URL}/favorites${isSaved ? `/${roomId}` : ''}`, {
+        method: isSaved ? 'DELETE' : 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        ...(isSaved ? {} : { body: JSON.stringify({ roomId }) }),
+      });
+    } catch {
+      // Keep the local saved list if the API is unavailable.
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('roomfinder_token');
     localStorage.removeItem('roomfinder_user');
     setIsLoggedIn(false);
+    setLoggedInUser(null);
     router.replace('/login');
   };
 
@@ -96,94 +135,83 @@ export default function HomePage() {
     document.getElementById('find-rooms')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   return (
-    <main id="home" className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="border-b border-slate-200 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm">
-              <Home className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="text-xl font-bold tracking-tight">Room Finder</div>
-            </div>
-          </div>
+    <main id="home" className="min-h-screen bg-white text-slate-900">
+      <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-5 py-4 sm:px-8">
+          <Link href="#home" className="flex shrink-0 items-center gap-2 text-xl font-bold tracking-tight text-rose-500" aria-label="Room Finder home">
+            <Home className="h-6 w-6 fill-rose-100" /> <span className="hidden sm:inline">Room Finder</span><span className="sm:hidden">RoomFinder</span>
+          </Link>
 
           <nav className="hidden items-center gap-7 md:flex">
             {navItems.map((item) => (
-              <Link key={item.label} href={item.href} className="text-sm font-medium text-slate-600 transition hover:text-emerald-700">
+              <Link key={item.label} href={item.href} className="text-sm font-medium text-slate-700 transition hover:text-rose-500">
                 {item.label}
               </Link>
             ))}
-            {isOwner && (
-              <Link href="/owner/add-room" className="font-semibold text-emerald-700 transition hover:text-emerald-800">
-                Add Room
-              </Link>
-            )}
-            {isAdmin && (
-              <Link href="/admin" className="font-semibold text-emerald-700 transition hover:text-emerald-800">
-                Admin dashboard
-              </Link>
-            )}
           </nav>
 
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <Link href="/owner/add-room" className="hidden whitespace-nowrap rounded-full px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 sm:inline-flex">
+              List your room
+            </Link>
+            <Link href="/favorites" aria-label="Saved rooms" title="Saved rooms" className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-700 transition hover:bg-slate-100 hover:text-rose-500">
+              <Heart className="h-5 w-5" />
+            </Link>
             {isLoggedIn ? (
               <>
-                <Link href="/favorites" className="hidden items-center gap-1 rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:border-emerald-200 hover:text-emerald-700 md:inline-flex">
-                  <Heart className="h-4 w-4" /> Saved
-                </Link>
+                <Link href="/messages" aria-label="Messages" title="Messages" className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-700 transition hover:bg-slate-100 hover:text-rose-500"><MessageCircle className="h-5 w-5" /></Link>
                 {isOwner && (
-                  <Link href="/owner/rooms" className="hidden rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-emerald-200 hover:text-emerald-700 md:inline-flex">My Rooms</Link>
+                  <Link href="/owner/rooms" className="hidden rounded-full px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 md:inline-flex">My Rooms</Link>
                 )}
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="inline-flex rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+                  className="inline-flex rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-900"
                 >
                   Logout
                 </button>
               </>
             ) : (
               <>
-                <Link href="/login" className="hidden rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 md:inline-flex">Login</Link>
-                <Link href="/register" className="inline-flex rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700">Create Account</Link>
+                <Link href="/login" className="hidden rounded-full px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 sm:inline-flex">Log in</Link>
+                <Link href="/register" aria-label="Create account" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 text-slate-700 shadow-sm transition hover:shadow-md sm:h-auto sm:w-auto sm:gap-2 sm:px-3 sm:py-2">
+                  <Menu className="h-4 w-4" /><span className="hidden text-sm font-semibold sm:inline">Sign up</span>
+                </Link>
               </>
             )}
           </div>
         </div>
       </header>
 
-      <section className="relative overflow-hidden bg-gradient-to-br from-emerald-50 via-white to-sky-50">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-16 sm:px-6 lg:grid-cols-[1.1fr_0.9fr] lg:px-8 lg:py-24">
+      <section className="relative overflow-hidden bg-white">
+        <div className="mx-auto grid max-w-[1440px] gap-8 px-5 py-10 sm:px-8 sm:py-14 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-14 lg:py-16">
           <div className="flex flex-col justify-center">
-            <div className="mb-4 inline-flex w-fit items-center gap-2 rounded-full border border-emerald-200 bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-700">
+            <div className="mb-5 inline-flex w-fit items-center gap-2 text-sm font-semibold text-rose-600">
               <ShieldCheck className="h-4 w-4" />
-              Verified listings in Ranchi
+              Ranchi stays, made simple
             </div>
 
-            <h1 className="max-w-xl text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">
-              Find Your Perfect Room in Ranchi
+            <h1 className="max-w-xl text-4xl font-semibold leading-tight tracking-tight text-slate-900 sm:text-5xl lg:text-[3.5rem]">
+              Find a place that feels like <span className="text-rose-500">yours.</span>
             </h1>
-            <p className="mt-5 max-w-lg text-lg text-slate-600">
-              Discover verified rooms, PGs and rentals near your college, office or preferred area.
+            {loggedInUser && (
+              <p className="mt-3 break-words text-sm text-slate-700">
+                Welcome back, <span className="font-semibold">{loggedInUser.name}</span>.
+                <span className="mt-1 block text-slate-600">Signed in as @{loggedInUser.username}</span>
+              </p>
+            )}
+            <p className="mt-4 max-w-lg text-base leading-7 text-slate-600 sm:text-lg">
+              Browse welcoming rooms and PGs around Ranchi, with clear pricing and verified owners.
             </p>
 
-            {isOwner && (
-              <div className="mt-6 flex items-center justify-start">
-                <Link href="/owner/add-room" className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-200 transition hover:bg-emerald-700">
-                  <Home className="h-4 w-4" /> Add more room
-                </Link>
-              </div>
-            )}
-
-            <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-lg shadow-slate-200/70">
-              <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr_1fr_auto]">
-                <div className="rounded-xl border border-slate-200 p-3">
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Location</label>
+            <div className="mt-7 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_8px_30px_rgba(0,0,0,0.08)] sm:rounded-full sm:p-2">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1fr_auto]">
+                <div className="min-w-0 rounded-xl px-4 py-2 transition hover:bg-slate-50 sm:rounded-full">
+                  <label className="mb-1 block text-xs font-semibold text-slate-800">Where</label>
                   <select
                     value={selectedLocation}
                     onChange={(event) => setSelectedLocation(event.target.value)}
-                    className="w-full bg-transparent text-sm font-medium text-slate-800 outline-none"
+                    className="w-full cursor-pointer bg-transparent text-sm text-slate-500 outline-none"
                   >
                     <option>Choose locality</option>
                     {locations.map((location) => (
@@ -191,12 +219,12 @@ export default function HomePage() {
                     ))}
                   </select>
                 </div>
-                <div className="rounded-xl border border-slate-200 p-3">
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Budget</label>
+                <div className="min-w-0 rounded-xl px-4 py-2 transition hover:bg-slate-50 sm:rounded-full sm:border-l sm:border-slate-200">
+                  <label className="mb-1 block text-xs font-semibold text-slate-800">Monthly budget</label>
                   <select
                     value={selectedBudget}
                     onChange={(event) => setSelectedBudget(event.target.value)}
-                    className="w-full bg-transparent text-sm font-medium text-slate-800 outline-none"
+                    className="w-full cursor-pointer bg-transparent text-sm text-slate-500 outline-none"
                   >
                     <option>₹3k - ₹8k</option>
                     <option>₹3k - ₹5k</option>
@@ -204,12 +232,12 @@ export default function HomePage() {
                     <option>₹8k+</option>
                   </select>
                 </div>
-                <div className="rounded-xl border border-slate-200 p-3">
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Room Type</label>
+                <div className="min-w-0 rounded-xl px-4 py-2 transition hover:bg-slate-50 sm:rounded-full sm:border-l sm:border-slate-200">
+                  <label className="mb-1 block text-xs font-semibold text-slate-800">Room type</label>
                   <select
                     value={selectedRoomType}
                     onChange={(event) => setSelectedRoomType(event.target.value)}
-                    className="w-full bg-transparent text-sm font-medium text-slate-800 outline-none"
+                    className="w-full cursor-pointer bg-transparent text-sm text-slate-500 outline-none"
                   >
                     <option>Single Room</option>
                     <option>Double Room</option>
@@ -224,31 +252,29 @@ export default function HomePage() {
                 <button
                   type="button"
                   onClick={handleSearch}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-200 hover:bg-emerald-700"
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-rose-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-rose-600 sm:rounded-full"
                 >
-                  <Search className="h-4 w-4" /> Find Room
+                  <Search className="h-4 w-4" /> <span className="sm:hidden lg:inline">Search</span>
                 </button>
               </div>
             </div>
           </div>
 
           <div className="relative flex items-center justify-center">
-            <div className="absolute -top-6 left-10 h-24 w-24 rounded-full bg-emerald-200/50 blur-3xl" />
-            <div className="absolute -bottom-8 right-8 h-28 w-28 rounded-full bg-sky-200/50 blur-3xl" />
-            <div className="relative w-full max-w-lg rounded-[2rem] border border-slate-200 bg-white p-4 shadow-2xl shadow-slate-200/70">
+            <div className="relative w-full max-w-xl">
               <img
                 src="https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1200&q=80"
-                alt="Room interior"
-                className="h-[440px] w-full rounded-[1.5rem] object-cover"
+                alt="Bright, welcoming room with a comfortable bed"
+                className="h-[280px] w-full rounded-2xl object-cover sm:h-[360px] lg:h-[410px]"
               />
-              <div className="absolute bottom-10 left-9 rounded-2xl border border-white/60 bg-white/90 p-4 shadow-xl backdrop-blur-md">
+              <div className="absolute bottom-4 left-4 rounded-xl border border-white/70 bg-white/95 p-3 shadow-lg backdrop-blur sm:bottom-6 sm:left-6 sm:p-4">
                 <div className="flex items-center gap-3">
-                  <div className="rounded-xl bg-emerald-100 p-2 text-emerald-700">
+                  <div className="rounded-full bg-rose-50 p-2 text-rose-500">
                     <Building2 className="h-5 w-5" />
                   </div>
                   <div>
-                    <div className="text-sm text-slate-500">Avg. rent</div>
-                    <div className="text-xl font-bold">₹5,800/mo</div>
+                    <div className="text-xs text-slate-500">Typical monthly rent</div>
+                    <div className="text-lg font-bold">₹5,800 <span className="text-sm font-normal text-slate-500">/ month</span></div>
                   </div>
                 </div>
               </div>
@@ -257,14 +283,14 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section id="locations" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-        <div className="mb-8 flex items-end justify-between">
+      <section id="locations" className="mx-auto max-w-[1440px] px-5 py-12 sm:px-8 sm:py-16">
+        <div className="mb-6 flex items-end justify-between">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">Popular Areas</p>
-            <h2 className="mt-2 text-3xl font-bold tracking-tight">Explore the most loved localities</h2>
+            <p className="text-sm font-medium text-slate-500">Get to know the neighbourhood</p>
+            <h2 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">Popular areas in Ranchi</h2>
           </div>
         </div>
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {[
             { name: 'Lalpur', count: 18, budget: '₹3k - ₹5k' },
             { name: 'Ratu Road', count: 24, budget: '₹5k - ₹8k' },
@@ -285,81 +311,65 @@ export default function HomePage() {
                 setHasSearched(true);
                 document.getElementById('find-rooms')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
               }}
-              className="group rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-sm transition duration-200 hover:-translate-y-1 hover:border-emerald-200 hover:shadow-xl hover:shadow-emerald-100/60"
+              className="group rounded-xl border border-slate-200 bg-white p-3 text-left transition duration-200 hover:border-slate-400 hover:shadow-md"
             >
-              <div className="relative mb-4 flex h-28 items-end overflow-hidden rounded-xl bg-gradient-to-br from-emerald-100 via-teal-50 to-sky-100 p-4">
-                <div className="absolute -right-5 -top-8 h-24 w-24 rounded-full bg-white/40 blur-xl" />
-                <div className="relative flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-emerald-700 shadow-sm transition group-hover:scale-110">
-                    <MapPin className="h-5 w-5" />
-                  </div>
-                  <span className="text-lg font-bold text-slate-800">{area.name}</span>
+              <div className="mb-3 flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-500 transition group-hover:bg-rose-100">
+                  <MapPin className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="block font-semibold text-slate-900">{area.name}</span>
+                  <span className="text-sm text-slate-500">{area.count} room options</span>
                 </div>
               </div>
-              <div className="flex items-center justify-between px-1 pb-1 text-sm text-slate-600">
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">{area.budget}</span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-50 transition group-hover:bg-emerald-600 group-hover:text-white">
-                  <ArrowRight className="h-4 w-4 text-emerald-600 group-hover:text-white" />
-                </span>
+              <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-sm text-slate-600">
+                <span>From {area.budget}</span>
+                <ArrowRight className="h-4 w-4 text-slate-400 transition group-hover:translate-x-1 group-hover:text-rose-500" />
               </div>
             </button>
           ))}
         </div>
       </section>
 
-      <section id="find-rooms" className="bg-white py-16">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <section id="find-rooms" className="scroll-mt-24 border-t border-slate-100 bg-slate-50 py-12 sm:py-16">
+        <div className="mx-auto max-w-[1440px] px-5 sm:px-8">
+          <div className="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">Featured Rooms</p>
-              <h2 className="mt-2 text-3xl font-bold tracking-tight">Handpicked rooms for students</h2>
+              <p className="text-sm font-medium text-slate-500">Good places to start</p>
+              <h2 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">{hasSearched ? 'Rooms matching your search' : 'Popular stays in Ranchi'}</h2>
             </div>
             {hasSearched && (
-              <div className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700">
-                {visibleRooms.length} rooms matched
+              <div className="rounded-full bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm">
+                {visibleRooms.length} {visibleRooms.length === 1 ? 'room' : 'rooms'} found
               </div>
             )}
           </div>
 
           {visibleRooms.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
-              <p className="text-xl font-semibold text-slate-700">No rooms found for this search.</p>
+            <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
+              <p className="text-xl font-semibold text-slate-800">No rooms found just yet</p>
               <p className="mt-2 text-sm text-slate-500">Try another location, budget range, or room type.</p>
+              <button type="button" onClick={() => { setSelectedLocation('Choose locality'); setSelectedBudget('₹3k - ₹8k'); setSelectedRoomType('Single Room'); setHasSearched(false); }} className="mt-5 rounded-full border border-slate-300 px-5 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-900">Clear search</button>
             </div>
           ) : (
-            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {visibleRooms.map((room) => (
-                <article key={room._id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-xl">
-                  <div className="relative">
-                    <img src={room.images[0]} alt={room.title} className="h-56 w-full object-cover" />
-                    <button className="absolute right-4 top-4 rounded-full bg-white/90 p-2 text-slate-700 shadow-md">❤</button>
+                <article key={room._id} className="group min-w-0">
+                  <div className="relative overflow-hidden rounded-xl bg-slate-100">
+                    <img src={room.images[0]} alt={room.title} className="aspect-[4/3] w-full object-cover transition duration-300 group-hover:scale-[1.03]" />
+                    <button type="button" onClick={() => toggleSavedRoom(room._id)} aria-label={savedRoomIds.includes(room._id) ? `Unsave ${room.title}` : `Save ${room.title}`} className="absolute right-3 top-3 rounded-full p-2 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] transition hover:scale-110"><Heart className={`h-6 w-6 ${savedRoomIds.includes(room._id) ? 'fill-rose-500 text-rose-500' : 'fill-black/30'}`} /></button>
+                    {room.ownerDetails?.isVerified && <span className="absolute left-3 top-3 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-sm">Verified stay</span>}
                   </div>
-                  <div className="p-5">
-                    <div className="mb-3 flex items-center justify-between gap-2">
-                      <span className="inline-flex rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">{room.roomType}</span>
-                      {room.ownerDetails?.isVerified && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700">
-                          <ShieldCheck className="h-3 w-3" /> Verified
-                        </span>
-                      )}
+                  <div className="pt-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className="line-clamp-1 font-semibold text-slate-900">{room.title}</h3>
+                      <div className="flex shrink-0 items-center gap-1 text-sm text-slate-900"><Star className="h-3.5 w-3.5 fill-current" /> {room.rating}</div>
                     </div>
-                    <h3 className="line-clamp-2 text-lg font-bold text-slate-900">{room.title}</h3>
-                    <div className="mt-3 flex items-center gap-2 text-sm text-slate-600">
-                      <MapPin className="h-4 w-4 text-emerald-600" />
-                      {room.location}
+                    <div className="mt-1 flex items-center gap-1 text-sm text-slate-500"><MapPin className="h-3.5 w-3.5" /> {room.location} <span aria-hidden="true">·</span> {room.roomType}</div>
+                    <div className="mt-2 text-sm text-slate-900">
+                      <span className="font-semibold">₹{room.rent.toLocaleString()}</span><span className="text-slate-600"> / month</span>
                     </div>
-                    <div className="mt-4 flex items-center justify-between">
-                      <div>
-                        <div className="text-2xl font-bold text-slate-900">₹{room.rent.toLocaleString()}</div>
-                        <div className="text-xs text-slate-500">/ month</div>
-                      </div>
-                      <div className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-sm font-medium text-amber-700">
-                        <Star className="h-4 w-4 fill-amber-400 text-amber-400" /> {room.rating}
-                      </div>
-                    </div>
-                    <div className="mt-5 flex items-center justify-between">
-                      <Link href={`/rooms/${room._id}`} className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">View Details <ArrowRight className="h-4 w-4" /></Link>
-                    </div>
+                    <Link href={`/rooms/${room._id}`} className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-rose-600 hover:text-rose-700">View room <ArrowRight className="h-4 w-4" /></Link>
                   </div>
                 </article>
               ))}
@@ -368,81 +378,81 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section id="map" className="mx-auto max-w-7xl px-4 pb-10 pt-12 sm:px-6 lg:px-8">
+      <section id="map" className="mx-auto max-w-[1440px] px-5 pb-10 pt-14 sm:px-8">
         <div className="grid gap-6 md:grid-cols-3">
-          <div className="rounded-3xl bg-slate-900 p-8 text-white shadow-xl">
-            <Users className="mb-4 h-8 w-8 text-emerald-400" />
-            <h3 className="text-2xl font-bold">Verified owners</h3>
-            <p className="mt-3 text-slate-300">Every listing is reviewed for authenticity and quality standards.</p>
+          <div className="rounded-2xl bg-slate-50 p-7">
+            <Users className="mb-4 h-7 w-7 text-rose-500" />
+            <h3 className="text-xl font-semibold">Verified owners</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Every listing is reviewed for authenticity and quality standards.</p>
           </div>
-          <div className="rounded-3xl bg-emerald-600 p-8 text-white shadow-xl">
-            <CheckCircle2 className="mb-4 h-8 w-8" />
-            <h3 className="text-2xl font-bold">Transparent pricing</h3>
-            <p className="mt-3 text-emerald-50">See rent, deposit, room details and amenities before contacting owners.</p>
+          <div className="rounded-2xl bg-slate-50 p-7">
+            <CheckCircle2 className="mb-4 h-7 w-7 text-rose-500" />
+            <h3 className="text-xl font-semibold">Transparent pricing</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">See rent, deposit, room details and amenities before contacting owners.</p>
           </div>
-          <div className="rounded-3xl bg-sky-600 p-8 text-white shadow-xl">
-            <MapPin className="mb-4 h-8 w-8" />
-            <h3 className="text-2xl font-bold">Location-based search</h3>
-            <p className="mt-3 text-sky-50">Find rentals near colleges, transport and markets across Ranchi.</p>
+          <div className="rounded-2xl bg-slate-50 p-7">
+            <MapPin className="mb-4 h-7 w-7 text-rose-500" />
+            <h3 className="text-xl font-semibold">Neighbourhood-first search</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Find rentals near colleges, transport and markets across Ranchi.</p>
           </div>
         </div>
       </section>
 
-      <section id="about" className="overflow-hidden border-t-4 border-emerald-500 bg-slate-900 text-white">
-        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:px-8">
+      <section id="about" className="overflow-hidden border-t border-slate-200 bg-slate-50 text-slate-900">
+        <div className="mx-auto grid max-w-[1440px] gap-10 px-5 py-14 sm:px-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:py-16">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-400">About Room Finder</p>
-            <h2 className="mt-4 max-w-2xl text-4xl font-black tracking-tight sm:text-[3.25rem]">A better way to find your next room in Ranchi.</h2>
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">Room Finder brings students and trusted room owners together in one simple place. We make it easier to compare rent, understand the neighborhood, and choose a stay that feels right before you visit.</p>
+            <p className="text-sm font-semibold text-rose-600">About Room Finder</p>
+            <h2 className="mt-3 max-w-2xl text-3xl font-semibold tracking-tight sm:text-4xl">A better way to find your next room in Ranchi.</h2>
+            <p className="mt-5 max-w-2xl text-base leading-7 text-slate-600">Room Finder brings students and trusted room owners together in one simple place. We make it easier to compare rent, understand the neighbourhood, and choose a stay that feels right before you visit.</p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <span className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-slate-200">Student-first search</span>
-              <span className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-slate-200">Clear pricing</span>
-              <span className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-slate-200">Trusted owners</span>
+              <span className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700">Student-first search</span>
+              <span className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700">Clear pricing</span>
+              <span className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700">Trusted owners</span>
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-3xl border border-white/10 bg-white/10 p-6 backdrop-blur-sm">
-              <ShieldCheck className="h-7 w-7 text-emerald-400" />
-              <h3 className="mt-5 text-xl font-bold">Built for confidence</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-300">Room details, deposit, furnishing, and location stay visible before you contact an owner.</p>
+            <div className="rounded-2xl border border-slate-200 bg-white p-6">
+              <ShieldCheck className="h-7 w-7 text-rose-500" />
+              <h3 className="mt-5 text-lg font-semibold">Built for confidence</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">Room details, deposit, furnishing, and location stay visible before you contact an owner.</p>
             </div>
-            <div className="rounded-3xl border border-emerald-400/30 bg-emerald-500 p-6 text-slate-950">
-              <Home className="h-7 w-7" />
-              <h3 className="mt-5 text-xl font-bold">Made for real life</h3>
-              <p className="mt-2 text-sm leading-6 text-emerald-950/80">From budget rooms to private studios, discover options around the places that matter to you.</p>
+            <div className="rounded-2xl bg-rose-50 p-6">
+              <Home className="h-7 w-7 text-rose-500" />
+              <h3 className="mt-5 text-lg font-semibold">Made for real life</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">From budget rooms to private studios, discover options around the places that matter to you.</p>
             </div>
           </div>
         </div>
       </section>
 
-      <footer className="border-t border-slate-800 bg-slate-950 text-slate-300">
-        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-4 lg:px-8">
+      <footer className="border-t border-slate-200 bg-white text-slate-700">
+        <div className="mx-auto grid max-w-[1440px] gap-10 px-5 py-10 sm:px-8 lg:grid-cols-4">
           <div>
-            <div className="mb-4 text-2xl font-bold text-white">Room Finder</div>
-            <p className="text-sm text-slate-400">Helping students find secure, affordable and verified room options in Ranchi.</p>
+            <div className="mb-4 text-xl font-bold text-rose-500">Room Finder</div>
+            <p className="text-sm leading-6 text-slate-500">Helping students find secure, affordable and verified room options in Ranchi.</p>
           </div>
           <div>
-            <h4 className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">Company</h4>
-            <ul className="space-y-3 text-sm">
-              <li>About</li>
-              <li>Contact</li>
-              <li>Privacy</li>
+            <h4 className="mb-4 text-sm font-semibold text-slate-900">Company</h4>
+            <ul className="space-y-3 text-sm text-slate-500">
+              <li><Link href="#about" className="hover:underline">About</Link></li>
+              <li><Link href="/messages" className="hover:underline">Contact</Link></li>
+              <li><Link href="/register" className="hover:underline">Privacy</Link></li>
             </ul>
           </div>
           <div>
-            <h4 className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">Explore</h4>
-            <ul className="space-y-3 text-sm">
-              <li>Find Rooms</li>
-              <li>Map</li>
-              <li>Locations</li>
+            <h4 className="mb-4 text-sm font-semibold text-slate-900">Explore</h4>
+            <ul className="space-y-3 text-sm text-slate-500">
+              <li><Link href="#find-rooms" className="hover:underline">Find Rooms</Link></li>
+              <li><Link href="#map" className="hover:underline">Why Room Finder</Link></li>
+              <li><Link href="#locations" className="hover:underline">Locations</Link></li>
             </ul>
           </div>
           <div>
-            <h4 className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">Get Started</h4>
-            <ul className="space-y-3 text-sm">
-              <li>Login</li>
-              <li>Register</li>
-              <li>Owner Dashboard</li>
+            <h4 className="mb-4 text-sm font-semibold text-slate-900">Get Started</h4>
+            <ul className="space-y-3 text-sm text-slate-500">
+              <li><Link href="/login" className="hover:underline">Log in</Link></li>
+              <li><Link href="/register" className="hover:underline">Create account</Link></li>
+              <li><Link href="/owner/add-room" className="hover:underline">List your room</Link></li>
             </ul>
           </div>
         </div>
